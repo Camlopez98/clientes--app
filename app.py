@@ -1,83 +1,99 @@
 import streamlit as st
+import sqlite3
 
-# Base de datos de clientes
-clientes = {}
+# Conexión a la base de datos (se crea si no existe)
+conn = sqlite3.connect('clientes.db', check_same_thread=False)
+c = conn.cursor()
 
-# Menú de opciones
-menu = ["Registrar cliente", "Eliminar cliente", "Buscar cliente", "Listar todos", "Listar preferenciales"]
-opcion = st.sidebar.selectbox("Menú", menu)
+# Crear tabla si no existe
+c.execute('''
+    CREATE TABLE IF NOT EXISTS clientes (
+        cedula TEXT PRIMARY KEY,
+        nombre TEXT,
+        apellido TEXT,
+        correo TEXT,
+        telefono TEXT,
+        direccion TEXT,
+        preferencial BOOLEAN
+    )
+''')
+conn.commit()
 
 # Funciones
-def mostrar_cliente(cedula, info):
-    st.write(f"**Cédula:** {cedula}")
-    st.write(f"Nombre: {info['NOMBRE']} {info['APELLIDO']}")
-    st.write(f"Correo: {info['CORREO']}")
-    st.write(f"Teléfono: {info['TELEFONO']}")
-    st.write(f"Dirección: {info['DIRECCION']}")
-    st.write(f"Preferencial: {'Sí' if info['PREFERENCIAL'] else 'No'}")
-    st.markdown("---")
+def registrar_cliente_sqlite(cedula, nombre, apellido, correo, telefono, direccion, preferencial):
+    try:
+        c.execute('INSERT INTO clientes VALUES (?, ?, ?, ?, ?, ?, ?)', 
+                  (cedula, nombre, apellido, correo, telefono, direccion, preferencial))
+        conn.commit()
+        st.success("✅ Cliente registrado con éxito.")
+    except sqlite3.IntegrityError:
+        st.error("⚠️ Ya existe un cliente con esa cédula.")
 
-# Registro
-if opcion == "Registrar cliente":
-    st.title("Registrar nuevo cliente")
+def eliminar_cliente_sqlite(cedula):
+    c.execute('DELETE FROM clientes WHERE cedula = ?', (cedula,))
+    conn.commit()
+    st.success("🗑️ Cliente eliminado (si existía).")
+
+def buscar_cliente_sqlite(cedula):
+    c.execute('SELECT * FROM clientes WHERE cedula = ?', (cedula,))
+    cliente = c.fetchone()
+    if cliente:
+        st.write(f"**Cédula:** {cliente[0]}")
+        st.write(f"**Nombre:** {cliente[1]} {cliente[2]}")
+        st.write(f"**Correo:** {cliente[3]}")
+        st.write(f"**Teléfono:** {cliente[4]}")
+        st.write(f"**Dirección:** {cliente[5]}")
+        st.write(f"**Preferencial:** {'✅ Sí' if cliente[6] else '❌ No'}")
+    else:
+        st.warning("Cliente no encontrado.")
+
+def mostrar_clientes(preferenciales=False):
+    if preferenciales:
+        c.execute('SELECT * FROM clientes WHERE preferencial = 1')
+    else:
+        c.execute('SELECT * FROM clientes')
+    datos = c.fetchall()
+    for cliente in datos:
+        st.write(f"**Cédula:** {cliente[0]} | **Nombre:** {cliente[1]} {cliente[2]} | **Preferencial:** {'✅' if cliente[6] else '❌'}")
+
+# Interfaz Streamlit
+st.title("📋 Sistema de Registro de Clientes")
+
+menu = ["Registrar Cliente", "Eliminar Cliente", "Buscar Cliente", "Listar Todos", "Listar Preferenciales"]
+opcion = st.sidebar.selectbox("Menú", menu)
+
+if opcion == "Registrar Cliente":
+    st.subheader("🧾 Registrar un nuevo cliente")
     cedula = st.text_input("Cédula")
     nombre = st.text_input("Nombre")
     apellido = st.text_input("Apellido")
     correo = st.text_input("Correo")
     telefono = st.text_input("Teléfono")
-    direccion = st.text_input("Dirección")
-    preferencial = st.checkbox("¿Cliente preferencial?")
-    
-    if st.button("Registrar"):
-        if cedula in clientes:
-            st.warning("Ya existe un cliente con esa cédula.")
-        else:
-            clientes[cedula] = {
-                "NOMBRE": nombre,
-                "APELLIDO": apellido,
-                "CORREO": correo,
-                "TELEFONO": telefono,
-                "DIRECCION": direccion,
-                "PREFERENCIAL": preferencial
-            }
-            st.success("Cliente registrado con éxito.")
+    direccion = st.text_area("Dirección")
+    preferencial = st.checkbox("¿Es cliente preferencial?")
 
-# Eliminar
-elif opcion == "Eliminar cliente":
-    st.title("Eliminar cliente")
-    cedula = st.text_input("Cédula a eliminar")
+    if st.button("Registrar Cliente"):
+        if cedula and nombre and apellido:
+            registrar_cliente_sqlite(cedula, nombre, apellido, correo, telefono, direccion, preferencial)
+        else:
+            st.warning("Por favor completa los campos obligatorios.")
+
+elif opcion == "Eliminar Cliente":
+    st.subheader("🗑️ Eliminar cliente")
+    cedula = st.text_input("Cédula del cliente a eliminar")
     if st.button("Eliminar"):
-        if cedula in clientes:
-            del clientes[cedula]
-            st.success("Cliente eliminado.")
-        else:
-            st.warning("Cliente no encontrado.")
+        eliminar_cliente_sqlite(cedula)
 
-# Buscar
-elif opcion == "Buscar cliente":
-    st.title("Buscar cliente")
-    cedula = st.text_input("Cédula a buscar")
+elif opcion == "Buscar Cliente":
+    st.subheader("🔍 Buscar cliente")
+    cedula = st.text_input("Cédula del cliente a buscar")
     if st.button("Buscar"):
-        if cedula in clientes:
-            mostrar_cliente(cedula, clientes[cedula])
-        else:
-            st.warning("Cliente no encontrado.")
+        buscar_cliente_sqlite(cedula)
 
-# Listar todos
-elif opcion == "Listar todos":
-    st.title("Lista de todos los clientes")
-    if not clientes:
-        st.info("No hay clientes registrados.")
-    for cedula, info in clientes.items():
-        mostrar_cliente(cedula, info)
+elif opcion == "Listar Todos":
+    st.subheader("📄 Lista de todos los clientes")
+    mostrar_clientes(preferenciales=False)
 
-# Listar preferenciales
-elif opcion == "Listar preferenciales":
-    st.title("Clientes preferenciales")
-    encontrados = False
-    for cedula, info in clientes.items():
-        if info["PREFERENCIAL"]:
-            mostrar_cliente(cedula, info)
-            encontrados = True
-    if not encontrados:
-        st.info("No hay clientes preferenciales.")
+elif opcion == "Listar Preferenciales":
+    st.subheader("🌟 Lista de clientes preferenciales")
+    mostrar_clientes(preferenciales=True)
